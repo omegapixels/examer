@@ -89,32 +89,29 @@ export default function AdvancedStatsPage() {
     const fetchData = async () => {
       setLoading(true)
 
-      const [{ data: examData }, { data: sessionsData }, { data: questionsData }, { data: answersData }] =
+      // Step 1: fetch exam info and questions in parallel (no dependency on sessions)
+      const [{ data: examData }, { data: sessionsData }, { data: questionsData }] =
         await Promise.all([
           supabase.from('exams').select('id, title, pass_score, time_limit').eq('id', examId).single(),
           supabase.from('exam_sessions').select('*').eq('exam_id', examId).not('finished_at', 'is', null).order('started_at', { ascending: false }),
           supabase.from('questions').select('*, answers(*)').eq('exam_id', examId).order('order_index'),
-          supabase.from('student_answers').select('*').in(
-            'session_id',
-            // We'll refetch after sessions load; for now fetch all for exam via join
-            ['placeholder']
-          )
         ])
-
-      // Refetch answers via sessions
-      if (sessionsData && sessionsData.length > 0) {
-        const sessionIds = sessionsData.map((s: ExamSession) => s.id)
-        const { data: realAnswers } = await supabase
-          .from('student_answers')
-          .select('*')
-          .in('session_id', sessionIds)
-
-        setStudentAnswers(realAnswers || [])
-      }
 
       setExam(examData)
       setSessions(sessionsData || [])
       setQuestions(questionsData || [])
+
+      // Step 2: fetch student answers only if there are completed sessions
+      if (sessionsData && sessionsData.length > 0) {
+        const sessionIds = sessionsData.map((s: ExamSession) => s.id)
+        const { data: answersData } = await supabase
+          .from('student_answers')
+          .select('*')
+          .in('session_id', sessionIds)
+
+        setStudentAnswers(answersData || [])
+      }
+
       setLoading(false)
     }
 
