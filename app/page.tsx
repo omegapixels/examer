@@ -152,6 +152,8 @@ export default function HomePage() {
                   <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <button className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }} onClick={() => copyLink(exam.id)}>🔗 الرابط</button>
                     <Link href={`/admin/results/${exam.id}`} className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}>📊 النتائج</Link>
+                    {/* ✨ NEW: Advanced stats button */}
+                    <Link href={`/admin/stats/${exam.id}`} className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}>📈 إحصائيات</Link>
                     <Link href={`/admin/edit/${exam.id}`} className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}>✏️ تعديل</Link>
                     <button className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }} onClick={() => toggleActive(exam)}>{exam.is_active ? '⏸ إيقاف' : '▶ تفعيل'}</button>
                     <button className="btn btn-danger" style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }} onClick={() => deleteExam(exam.id)} disabled={deleting === exam.id}>{deleting === exam.id ? '...' : '🗑'}</button>
