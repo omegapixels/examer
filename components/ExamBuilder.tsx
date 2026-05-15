@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, Exam, Question, Answer } from '@/lib/supabase'
+import ImportQuestionsModal from '@/components/ImportQuestionsModal'
 
 type AnswerForm = { text: string; is_correct: boolean }
 type QuestionForm = { question_text: string; points: number; answers: AnswerForm[] }
@@ -17,6 +18,7 @@ export default function ExamBuilder({ initialExam, initialQuestions, mode }: Exa
   const router = useRouter()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [showImport, setShowImport] = useState(false)
 
   const [title, setTitle] = useState(initialExam?.title || '')
   const [description, setDescription] = useState(initialExam?.description || '')
@@ -80,7 +82,24 @@ export default function ExamBuilder({ initialExam, initialQuestions, mode }: Exa
     ))
   }
 
-  const validate = () => {
+  // دالة تحويل الأسئلة المستوردة إلى صيغة QuestionForm
+  const handleImported = async (count: number) => {
+    setShowImport(false)
+    if (!initialExam?.id) return
+    // أعد تحميل الأسئلة من Supabase بعد الاستيراد
+    const { data } = await supabase
+      .from('questions')
+      .select('*, answers(*)')
+      .eq('exam_id', initialExam.id)
+      .order('order_index')
+    if (data) {
+      setQuestions(data.map((q: Question & { answers: Answer[] }) => ({
+        question_text: q.question_text,
+        points: q.points,
+        answers: q.answers.map((a: Answer) => ({ text: a.answer_text, is_correct: a.is_correct }))
+      })))
+    }
+  }
     if (!title.trim()) return 'يرجى إدخال عنوان الامتحان'
     if (questions.length === 0) return 'يرجى إضافة سؤال واحد على الأقل'
     for (let i = 0; i < questions.length; i++) {
@@ -301,9 +320,26 @@ export default function ExamBuilder({ initialExam, initialQuestions, mode }: Exa
         ))}
       </div>
 
-      <button className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center', marginBottom: '1.5rem', padding: '0.8rem', fontSize: '0.95rem' }} onClick={addQuestion}>
-        + إضافة سؤال جديد
-      </button>
+      {/* أزرار إضافة واستيراد الأسئلة */}
+      <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem' }}>
+        <button
+          className="btn btn-secondary"
+          style={{ flex: 1, justifyContent: 'center', padding: '0.8rem', fontSize: '0.95rem' }}
+          onClick={addQuestion}
+        >
+          + إضافة سؤال يدوياً
+        </button>
+        <button
+          className="btn btn-secondary"
+          style={{
+            flex: 1, justifyContent: 'center', padding: '0.8rem', fontSize: '0.95rem',
+            borderColor: '#E8500A', color: '#E8500A', background: '#FFF3EE'
+          }}
+          onClick={() => setShowImport(true)}
+        >
+          📥 استيراد من CSV / JSON
+        </button>
+      </div>
 
       {error && (
         <div style={{ background: '#FEE2E2', color: '#991B1B', padding: '0.8rem 1rem', borderRadius: 8, marginBottom: '1rem', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -317,6 +353,43 @@ export default function ExamBuilder({ initialExam, initialQuestions, mode }: Exa
           {saving ? '⏳ جار الحفظ...' : mode === 'create' ? '✓ إنشاء الامتحان' : '✓ حفظ التعديلات'}
         </button>
       </div>
+
+      {/* نافذة استيراد الأسئلة */}
+      {showImport && initialExam?.id && (
+        <ImportQuestionsModal
+          examId={initialExam.id}
+          onImported={handleImported}
+          onClose={() => setShowImport(false)}
+        />
+      )}
+
+      {showImport && !initialExam?.id && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 1000,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '1rem'
+        }} onClick={() => setShowImport(false)}>
+          <div style={{
+            background: 'white', borderRadius: 16, padding: '2rem',
+            maxWidth: 420, width: '100%', textAlign: 'center',
+            boxShadow: '0 24px 80px rgba(0,0,0,0.2)'
+          }}>
+            <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>💾</div>
+            <h3 style={{ margin: '0 0 0.75rem', fontSize: '1.1rem' }}>احفظ الامتحان أولاً</h3>
+            <p style={{ color: '#7a7268', fontSize: '0.9rem', marginBottom: '1.25rem', lineHeight: 1.6 }}>
+              يجب حفظ الامتحان أولاً قبل استيراد الأسئلة<br/>
+              اضغط "إنشاء الامتحان" ثم ارجع لإضافة الأسئلة
+            </p>
+            <button
+              onClick={() => setShowImport(false)}
+              style={{ padding: '0.75rem 2rem', borderRadius: 10, border: 'none', background: '#E8500A', color: 'white', cursor: 'pointer', fontSize: '0.95rem', fontWeight: 700, fontFamily: 'inherit' }}
+            >
+              حسناً
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
