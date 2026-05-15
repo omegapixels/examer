@@ -34,6 +34,135 @@ export default function ExamBuilder({ initialExam, initialQuestions, mode }: Exa
     })) || []
   )
 
+  const [importError, setImportError] = useState('')
+  const [showJsonImport, setShowJsonImport] = useState(false)
+
+  // Parse and import questions+answers from a JSON file directly into state
+  const handleJsonFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setImportError('')
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const raw = ev.target?.result as string
+        const parsed = JSON.parse(raw)
+
+        // Support both array format and { questions: [...] } format
+        const items: unknown[] = Array.isArray(parsed)
+          ? parsed
+          : Array.isArray(parsed?.questions)
+          ? parsed.questions
+          : null
+
+        if (!items) {
+          setImportError('تنسيق JSON غير صحيح. يجب أن يكون مصفوفة أو كائن يحتوي على مفتاح "questions".')
+          return
+        }
+
+        const imported: QuestionForm[] = []
+
+        for (let i = 0; i < items.length; i++) {
+          const q = items[i] as Record<string, unknown>
+
+          // Accept question text from multiple common field names
+          const questionText =
+            (q.question_text as string) ||
+            (q.question as string) ||
+            (q.text as string) ||
+            ''
+
+          if (!questionText.trim()) {
+            setImportError(`السؤال رقم ${i + 1} لا يحتوي على نص.`)
+            return
+          }
+
+          // Accept answers from multiple common field names
+          const rawAnswers =
+            (q.answers as unknown[]) ||
+            (q.options as unknown[]) ||
+            (q.choices as unknown[]) ||
+            []
+
+          if (!Array.isArray(rawAnswers) || rawAnswers.length < 2) {
+            setImportError(`السؤال رقم ${i + 1} يجب أن يحتوي على خيارين على الأقل.`)
+            return
+          }
+
+          const answers: AnswerForm[] = rawAnswers.map((a) => {
+            if (typeof a === 'string') {
+              // Simple string format — no correct answer info
+              return { text: a, is_correct: false }
+            }
+            const ans = a as Record<string, unknown>
+            const text =
+              (ans.text as string) ||
+              (ans.answer_text as string) ||
+              (ans.answer as string) ||
+              (ans.label as string) ||
+              ''
+            const is_correct =
+              typeof ans.is_correct === 'boolean'
+                ? ans.is_correct
+                : typeof ans.correct === 'boolean'
+                ? ans.correct
+                : ans.is_correct === 1 || ans.correct === 1
+                ? true
+                : false
+            return { text, is_correct }
+          })
+
+          // If none marked correct, check for a separate correct_answer field
+          if (!answers.some(a => a.is_correct)) {
+            const correctField =
+              (q.correct_answer as string) ||
+              (q.correct as string) ||
+              (q.answer as string) ||
+              null
+
+            if (correctField !== null) {
+              // Match by text value or by 0-based index
+              const idx = parseInt(correctField as string, 10)
+              answers.forEach((a, j) => {
+                if (
+                  a.text === correctField ||
+                  j === idx
+                ) {
+                  a.is_correct = true
+                }
+              })
+            }
+          }
+
+          // Fallback: mark first answer correct if still none marked
+          if (!answers.some(a => a.is_correct) && answers.length > 0) {
+            answers[0].is_correct = true
+          }
+
+          imported.push({
+            question_text: questionText,
+            points: typeof q.points === 'number' ? q.points : 1,
+            answers
+          })
+        }
+
+        if (imported.length === 0) {
+          setImportError('لم يتم العثور على أسئلة في الملف.')
+          return
+        }
+
+        setQuestions(prev => [...prev, ...imported])
+        setShowJsonImport(false)
+        // Reset file input
+        e.target.value = ''
+      } catch {
+        setImportError('فشل قراءة الملف. تأكد من أنه ملف JSON صحيح.')
+      }
+    }
+    reader.readAsText(file)
+  }
+
   const addQuestion = () => {
     setQuestions(prev => [...prev, {
       question_text: '',
@@ -377,7 +506,7 @@ export default function ExamBuilder({ initialExam, initialQuestions, mode }: Exa
       </div>
 
       {/* Add / Import buttons */}
-      <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
         <button
           className="btn btn-secondary"
           style={{ flex: 1, justifyContent: 'center', padding: '0.8rem', fontSize: '0.95rem' }}
@@ -396,11 +525,70 @@ export default function ExamBuilder({ initialExam, initialQuestions, mode }: Exa
             color: '#E8500A',
             background: '#FFF3EE'
           }}
-          onClick={() => setShowImport(true)}
+          onClick={() => { setShowJsonImport(true); setImportError('') }}
         >
-          استيراد من CSV / JSON
+          استيراد من JSON
         </button>
+        {/* Keep old CSV/DB import if exam already saved */}
+        {initialExam?.id && (
+          <button
+            className="btn btn-secondary"
+            style={{
+              flex: 1,
+              justifyContent: 'center',
+              padding: '0.8rem',
+              fontSize: '0.95rem',
+            }}
+            onClick={() => setShowImport(true)}
+          >
+            استيراد من CSV
+          </button>
+        )}
       </div>
+
+      {/* Inline JSON import panel */}
+      {showJsonImport && (
+        <div style={{
+          background: '#FFF3EE',
+          border: '1.5px solid #E8500A',
+          borderRadius: 12,
+          padding: '1.25rem',
+          marginBottom: '1.5rem'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+            <strong style={{ fontSize: '0.95rem', color: '#E8500A' }}>استيراد أسئلة من ملف JSON</strong>
+            <button
+              onClick={() => { setShowJsonImport(false); setImportError('') }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.1rem', color: '#7a7268' }}
+            >✕</button>
+          </div>
+          <p style={{ fontSize: '0.82rem', color: '#7a7268', marginBottom: '0.75rem', lineHeight: 1.6 }}>
+            يجب أن يكون الملف مصفوفة JSON تحتوي على أسئلة، كل سؤال يحتوي على:
+            <br />
+            <code>question_text</code>، <code>answers</code> (مصفوفة تحتوي على <code>text</code> و<code>is_correct</code>)
+          </p>
+          <input
+            type="file"
+            accept=".json,application/json"
+            onChange={handleJsonFileImport}
+            style={{
+              display: 'block',
+              padding: '0.5rem',
+              border: '1.5px dashed #E8500A',
+              borderRadius: 8,
+              cursor: 'pointer',
+              width: '100%',
+              fontSize: '0.88rem',
+              background: 'white'
+            }}
+          />
+          {importError && (
+            <div style={{ color: '#991B1B', background: '#FEE2E2', borderRadius: 8, padding: '0.6rem 0.9rem', marginTop: '0.75rem', fontSize: '0.88rem' }}>
+              ⚠️ {importError}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Error message */}
       {error && (
